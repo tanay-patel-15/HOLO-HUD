@@ -1,0 +1,47 @@
+/*
+ * Shared idle-animation keyframes (CLAUDE.md: "nothing is ever fully
+ * static"). Phase 1 only needs a couple of these; more idle loops join
+ * here as later phases add them, per ROADMAP's stagger/incommensurable-
+ * speed guidance.
+ */
+
+@keyframes hud-slow-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes hud-scan-sweep {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.5;
+  }
+  90% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+@keyframes hud-ticker-scroll {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-hud-slow-spin {
+  animation: hud-slow-spin 90s linear infinite;
+}
+
+.animate-hud-scan-sweep {
+  animation: hud-scan-sweep 6s ease-in-out infinite;
+}
+
+.animate-hud-ticker {
+  animation: hud-ticker-scroll 22s linear infinite;
+}
