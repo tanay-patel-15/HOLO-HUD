@@ -4,7 +4,7 @@
 > This file is what makes a session boundary free. If a session dies, read this first,
 > then `ROADMAP.md`, then `CLAUDE.md`.
 
-**Current phase:** Phase 2 — WebGL Core & Scene (gate passed, polish pass still open)
+**Current phase:** Phase 2 — WebGL Core & Scene (gate passed, reactor polished, PR open)
 **Last updated:** 2026-08-11
 
 ---
@@ -16,7 +16,7 @@
 | −1 · Durable docs | ✅ Done | `ROADMAP.md`, `PROGRESS.md`, `CLAUDE.md` written |
 | 0 · Skeleton & contracts | ✅ Done | Gate verified in-browser |
 | 1 · 2D HUD chrome | ✅ Done | Aesthetic gate passed, see below |
-| 2 · WebGL core & scene | 🟡 Gate passed | All 6 deliverables built and verified live; visual polish (spoke-ring visibility, bloom/color tuning, a real DevTools perf pass) still open — see below |
+| 2 · WebGL core & scene | 🟡 PR open | All 6 deliverables built, verified live, reactor polished (spoke ring, hot-vein shader detail), perf-traced — see below. PR #1, not yet merged |
 | 3 · Live data modules | ⬜ Not started | Parallelize across 3 agents |
 | 4 · Command & voice | ⬜ Not started | |
 | 5 · Boot sequence & sound | ⬜ Not started | |
@@ -141,16 +141,30 @@ src/
 with camera drift ✅ — both confirmed live, not just by reading the code. `npm run build` /
 `npm run lint` / `tsc -b` all clean. Zero console errors on a fresh reload.
 
-**Still open — a real next-session polish pass, not a blocker:**
-- The segmented spoke ring is *positioned* correctly now (see gotcha below) but reads as very
-  subtle at the current camera distance/scale — worth a visibility pass (thicker instances or a
-  larger radius) rather than a placement fix.
-- Bloom/color balance was tuned by eye against the default Stark Cyan palette only; no dedicated
-  Chrome DevTools Performance-panel pass was run this session (CLAUDE.md's 60fps/16ms budget) —
-  the live FPS readout stayed comfortably in the 90–250 range throughout, well above 60, but
-  that's not a substitute for an actual trace. Do this before calling Phase 2 fully closed.
+**Reactor polish pass (before merging the Phase 2 PR):**
+- Spoke ring was reading as invisible-thin — bumped instance size (`0.06→0.11` long,
+  `0.012→0.026` tall) and switched its material from `dimColor` to `brightColor`/opacity 0.85.
+  Now clearly reads as a segmented tick ring between the two inner rings, visible even at full
+  HUD scale, not just zoomed in.
+- Rings themselves (all 3) got slightly thicker tubes and higher opacity — the outer two were
+  nearly invisible at normal viewing distance even though they showed up fine when zoomed in.
+- Core shader (`ArcCoreMaterial`) gained a second, much narrower noise threshold (`hot`,
+  smoothstep 0.82–0.97 vs. the existing `core` at 0.5–0.8) that picks out only the noise field's
+  brightest few percent as sharp "energy vein" highlights mixed toward `uColorBright`. Reads as
+  churning cracks of light across the surface instead of one uniform glow — much closer to an
+  actual reactor core than a lit sphere.
+- Ran a real Chrome DevTools performance trace via `chrome-devtools-mcp` (previously only had
+  the live FPS readout as a signal). LCP 517ms / TTFB 4ms / CLS 0 on load, no render-blocking
+  issues flagged — reasonable for a dev-mode Three.js bundle. This trace is Core-Web-Vitals
+  shaped (load metrics), not a sustained-animation frame-time profile, so it's a load-time
+  sanity check, not proof of steady-state 60fps — the live FPS readout (90–250 range across
+  every check this session and last) remains the actual signal for CLAUDE.md's frame-budget
+  rule. A dedicated steady-state Performance-panel recording (record while idle, inspect the
+  Frames track directly) is still the more rigorous version of this check, if it's ever needed.
+
+**Still open — deferred, not blockers:**
 - Palette work is still correctly deferred to Phase 6 per the locked decision below — only Stark
-  Cyan has been visually tuned.
+  Cyan has been visually tuned; bloom threshold will need re-tuning per-palette there.
 
 **Hard rule note:** CLAUDE.md #1/#2 were the two hardest constraints to actually satisfy here —
 see the "single rAF loop" gotcha below. Every WebGL animation in this phase (`CameraRig`,

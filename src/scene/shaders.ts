@@ -105,14 +105,21 @@ export const ArcCoreMaterial = shaderMaterial(
       float noise = (n1 + n2) * 0.5 + 0.5;
 
       float breathe = 0.72 + 0.28 * sin(uTime * 0.9);
-      float core = smoothstep(0.55, 0.85, noise) * breathe;
+      float core = smoothstep(0.5, 0.8, noise) * breathe;
+      // A second, much narrower threshold on the same noise field picks
+      // out only its brightest few percent as sparse "energy vein"
+      // highlights — the difference between a lit ball and a churning
+      // reactor is a handful of hot cracks, not one uniform glow.
+      float hot = smoothstep(0.82, 0.97, noise) * breathe;
 
       // Body stays a scaled version of uColor (hue preserved, just
       // dimmer/brighter with the noise churn) instead of blending toward
-      // white — only the rim mix pulls toward uColorBright.
-      vec3 body = uColor * (0.32 + core * 0.4);
+      // white — only the rim mix and the hot veins pull toward
+      // uColorBright.
+      vec3 body = uColor * (0.28 + core * 0.4);
       vec3 color = mix(body, uColorBright, fresnel);
-      float alpha = clamp(0.5 + core * 0.25 + fresnel * 0.85, 0.0, 1.0) * uIntensity;
+      color = mix(color, uColorBright, hot * 0.9);
+      float alpha = clamp(0.48 + core * 0.22 + hot * 0.3 + fresnel * 0.85, 0.0, 1.0) * uIntensity;
 
       gl_FragColor = vec4(color, alpha);
     }

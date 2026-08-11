@@ -17,9 +17,9 @@ interface RingSpec {
 }
 
 const RINGS: RingSpec[] = [
-  { radius: 1.55, tube: 0.012, speed: 0.11, opacity: 0.55 },
-  { radius: 1.85, tube: 0.008, speed: -0.087, opacity: 0.35 },
-  { radius: 2.2, tube: 0.006, speed: 0.063, opacity: 0.22 },
+  { radius: 1.55, tube: 0.014, speed: 0.11, opacity: 0.65 },
+  { radius: 1.85, tube: 0.009, speed: -0.087, opacity: 0.45 },
+  { radius: 2.2, tube: 0.007, speed: 0.063, opacity: 0.32 },
 ];
 
 const SPOKE_COUNT = 24;
@@ -135,11 +135,11 @@ export function ArcReactor() {
       ))}
 
       <instancedMesh ref={spokeRef} args={[undefined, undefined, SPOKE_COUNT]} frustumCulled={false}>
-        <boxGeometry args={[0.06, 0.012, 0.012]} />
+        <boxGeometry args={[0.11, 0.026, 0.02]} />
         <meshBasicMaterial
-          color={dimColor}
+          color={brightColor}
           transparent
-          opacity={0.5}
+          opacity={0.85}
           blending={THREE.AdditiveBlending}
           depthWrite={false}
         />
