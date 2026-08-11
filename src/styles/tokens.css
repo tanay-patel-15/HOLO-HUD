@@ -1,0 +1,78 @@
+/*
+ * Design tokens — the single source of truth for HOLO-HUD's palette.
+ *
+ * Hard rule (see /CLAUDE.md #3): never hardcode a color anywhere else in the
+ * app. Components, SVG, and (later) shader uniforms all read from here.
+ *
+ * Only "Stark Cyan" is wired up in Phase 0. The other palettes described in
+ * ROADMAP.md are deferred to Phase 6 — bloom threshold is coupled to color
+ * saturation, so tuning them before postprocessing exists means tuning twice.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* ---- Palette: Stark Cyan (default) ---- */
+  --hud-core-h: 189;
+  --hud-core-s: 100%;
+  --hud-core-l: 50%;
+  --hud-core: hsl(var(--hud-core-h) var(--hud-core-s) var(--hud-core-l));
+  --hud-core-dim: hsl(var(--hud-core-h) var(--hud-core-s) 32%);
+  --hud-core-bright: hsl(var(--hud-core-h) var(--hud-core-s) 68%);
+
+  --hud-bg: #0a1929;
+  --hud-bg-deep: #050c15;
+  --hud-surface: #0f2438;
+  --hud-surface-raised: #143049;
+
+  --hud-border: hsl(var(--hud-core-h) 60% 40% / 0.4);
+  --hud-border-bright: hsl(var(--hud-core-h) 80% 55% / 0.8);
+
+  --hud-text: #d8f4ff;
+  --hud-text-dim: hsl(var(--hud-core-h) 30% 65% / 0.7);
+  --hud-text-faint: hsl(var(--hud-core-h) 20% 50% / 0.4);
+
+  /* Semantic accents — kept in the cyan family for Phase 0/1; combat-mode
+     red is a state applied on top, not a competing palette (see ROADMAP). */
+  --hud-warn: #ffb627;
+  --hud-danger: #ff2d2d;
+  --hud-ok: var(--hud-core);
+
+  /* Bloom stays near 70% saturation at the source; the postprocessing pass
+     supplies perceived intensity. Do not push --hud-core-s past ~80%. */
+  --hud-glow-sm: 0 0 4px var(--hud-core);
+  --hud-glow-md: 0 0 12px var(--hud-core), 0 0 2px var(--hud-core-bright);
+  --hud-glow-lg: 0 0 32px var(--hud-core), 0 0 8px var(--hud-core-bright);
+
+  /* Type */
+  --hud-font-display: 'Chakra Petch', ui-sans-serif, system-ui, sans-serif;
+  --hud-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Stage */
+  --hud-aspect-w: 16;
+  --hud-aspect-h: 9;
+}
+
+/* Tailwind v4 is CSS-first: this maps the tokens above into real utility
+   classes (bg-hud-core, text-hud-text, font-hud-mono, ...) instead of
+   requiring arbitrary-value escapes at every call site. */
+@theme inline {
+  --color-hud-core: var(--hud-core);
+  --color-hud-core-dim: var(--hud-core-dim);
+  --color-hud-core-bright: var(--hud-core-bright);
+  --color-hud-bg: var(--hud-bg);
+  --color-hud-bg-deep: var(--hud-bg-deep);
+  --color-hud-surface: var(--hud-surface);
+  --color-hud-surface-raised: var(--hud-surface-raised);
+  --color-hud-border: var(--hud-border);
+  --color-hud-border-bright: var(--hud-border-bright);
+  --color-hud-text: var(--hud-text);
+  --color-hud-text-dim: var(--hud-text-dim);
+  --color-hud-text-faint: var(--hud-text-faint);
+  --color-hud-warn: var(--hud-warn);
+  --color-hud-danger: var(--hud-danger);
+  --color-hud-ok: var(--hud-ok);
+
+  --font-hud-display: var(--hud-font-display);
+  --font-hud-mono: var(--hud-font-mono);
+}
