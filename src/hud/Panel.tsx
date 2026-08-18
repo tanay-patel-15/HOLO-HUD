@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useParallax } from '@/hud/useParallax';
 
 interface PanelProps {
   title: string;
@@ -6,6 +7,8 @@ interface PanelProps {
   className?: string;
   /** Staggers the scan sweep so panels don't all animate in lockstep. */
   sweepDelay?: number;
+  /** How far off the screen plane this panel feels — see useParallax. */
+  depth?: number;
 }
 
 const CHAMFER = 14;
@@ -14,15 +17,20 @@ const CHAMFER = 14;
  * The signature chrome: clip-path-cut corners instead of border-radius.
  * Angular reads as targeting/instrument-panel; rounded reads as generic
  * dashboard card — this is the one deliberate risk Phase 1 takes (see
- * PROGRESS.md). Parallax binding to the shared camera (ROADMAP's "DOM
- * owns every glyph" architecture) is Phase 2 work, not wired here yet.
+ * PROGRESS.md). Bound to the shared camera via useParallax so it drifts in
+ * sync with the WebGL scene behind it (ROADMAP's "DOM owns every glyph"
+ * architecture, wired up in Phase 2).
  */
-export function Panel({ title, children, className = '', sweepDelay = 0 }: PanelProps) {
+export function Panel({ title, children, className = '', sweepDelay = 0, depth = 1 }: PanelProps) {
+  const parallaxRef = useParallax<HTMLDivElement>(depth);
+
   return (
     <div
+      ref={parallaxRef}
       className={`relative border border-hud-border bg-hud-surface/70 ${className}`}
       style={{
         clipPath: `polygon(${CHAMFER}px 0, 100% 0, 100% calc(100% - ${CHAMFER}px), calc(100% - ${CHAMFER}px) 100%, 0 100%, 0 ${CHAMFER}px)`,
+        willChange: 'transform',
       }}
     >
       {/* corner tick brackets on the two uncut (sharp) corners */}

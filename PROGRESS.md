@@ -4,7 +4,7 @@
 > This file is what makes a session boundary free. If a session dies, read this first,
 > then `ROADMAP.md`, then `CLAUDE.md`.
 
-**Current phase:** Phase 2 — WebGL Core & Scene (not started)
+**Current phase:** Phase 2 — WebGL Core & Scene (gate passed, reactor polished, PR open)
 **Last updated:** 2026-08-11
 
 ---
@@ -16,7 +16,7 @@
 | −1 · Durable docs | ✅ Done | `ROADMAP.md`, `PROGRESS.md`, `CLAUDE.md` written |
 | 0 · Skeleton & contracts | ✅ Done | Gate verified in-browser |
 | 1 · 2D HUD chrome | ✅ Done | Aesthetic gate passed, see below |
-| 2 · WebGL core & scene | ⬜ Not started | Next up. Biggest phase, 6–9 sessions |
+| 2 · WebGL core & scene | 🟡 PR open | All 6 deliverables built, verified live, reactor polished (spoke ring, hot-vein shader detail), perf-traced — see below. PR #1, not yet merged |
 | 3 · Live data modules | ⬜ Not started | Parallelize across 3 agents |
 | 4 · Command & voice | ⬜ Not started | |
 | 5 · Boot sequence & sound | ⬜ Not started | |
@@ -96,28 +96,88 @@ file tree wasn't created — those imply real telemetry wiring, which is Phase 3
 
 ---
 
+## Phase 2 — what was built
+
+All 6 ROADMAP deliverables landed and were verified live in Chrome (screenshots + console +
+direct DOM/state inspection, not just typecheck):
+
+```
+src/
+  scene/                      # WebGL — owns the world (new this phase)
+    Scene.tsx                  # <SceneCanvas>: Canvas + the external clock-driver useEffect
+    CameraRig.tsx               # writes core/camera-store.ts for the first time
+    ArcReactor/index.tsx         # 3 rings + segmented spoke ring + fresnel/noise core + instanced motes
+    GridFloor.tsx                # drei <Grid>, slow idle rotation
+    LightShafts.tsx              # additive-blended shader planes, fanned + rotating
+    ParticleField.tsx            # drei <Sparkles> ambient dust
+    Effects.tsx                  # EffectComposer: Bloom + ChromaticAberration + Noise (grain)
+    shaders.ts                  # ArcCoreMaterial (fresnel+noise) & ShaftMaterial, via drei's
+                                 # shaderMaterial + extend()
+  hud/
+    useParallax.ts               # cameraStore subscription -> direct style.transform mutation
+    Panel.tsx, Frame.tsx        # now bound to useParallax at different `depth`s
+  core/tokens.ts                 # readTokens() now normalizes CSS colors before handing them
+                                 # to THREE.Color (see gotcha below) — Phase 0/1 behavior unchanged
+```
+
+- **Reactor**: `ArcReactor` — 3 independently-spinning `TorusGeometry` rings (incommensurable
+  rad/s speeds), a 24-instance segmented spoke ring, a fresnel + two-octave-simplex-noise
+  shader core (`ArcCoreMaterial`) with a slow sine "breathing" envelope, and ~90 instanced
+  motes orbiting at randomized radius/height/speed.
+- **Postprocessing**: `@react-three/postprocessing`'s `EffectComposer` — `Bloom` (mipmap blur,
+  tuned so the shader body stays dim-cyan and only the rim/hot noise veins clip toward white),
+  subtle `ChromaticAberration`, subtle `Noise` (film grain) via `BlendFunction.OVERLAY`.
+- **Camera drift**: `CameraRig` drifts camera position on 3 incommensurable-frequency sines,
+  `camera.lookAt(0,0,0)` every frame, republishes the resulting pose to `camera-store.ts`.
+- **DOM parallax**: `hud/useParallax.ts` subscribes to `cameraStore` and mutates
+  `node.style.transform` directly (no React re-render — same non-reactive-store pattern
+  `providers/browser/perf.ts` uses for the clock). `Panel` takes a `depth` prop (0.7–1.4 across
+  the current layout); `Frame`'s corner brackets compose their own static rotation with the
+  parallax offset by hand instead of using the hook directly, since they need both. Verified
+  live: inspected `element.style.transform` in the running app and confirmed real, distinct,
+  non-zero `translate3d`/`rotateX`/`rotateY` values scaling correctly with each panel's `depth`.
+
+**Gate check (done looks like):** reactor spinning + breathing ✅, panels parallaxing in sync
+with camera drift ✅ — both confirmed live, not just by reading the code. `npm run build` /
+`npm run lint` / `tsc -b` all clean. Zero console errors on a fresh reload.
+
+**Reactor polish pass (before merging the Phase 2 PR):**
+- Spoke ring was reading as invisible-thin — bumped instance size (`0.06→0.11` long,
+  `0.012→0.026` tall) and switched its material from `dimColor` to `brightColor`/opacity 0.85.
+  Now clearly reads as a segmented tick ring between the two inner rings, visible even at full
+  HUD scale, not just zoomed in.
+- Rings themselves (all 3) got slightly thicker tubes and higher opacity — the outer two were
+  nearly invisible at normal viewing distance even though they showed up fine when zoomed in.
+- Core shader (`ArcCoreMaterial`) gained a second, much narrower noise threshold (`hot`,
+  smoothstep 0.82–0.97 vs. the existing `core` at 0.5–0.8) that picks out only the noise field's
+  brightest few percent as sharp "energy vein" highlights mixed toward `uColorBright`. Reads as
+  churning cracks of light across the surface instead of one uniform glow — much closer to an
+  actual reactor core than a lit sphere.
+- Ran a real Chrome DevTools performance trace via `chrome-devtools-mcp` (previously only had
+  the live FPS readout as a signal). LCP 517ms / TTFB 4ms / CLS 0 on load, no render-blocking
+  issues flagged — reasonable for a dev-mode Three.js bundle. This trace is Core-Web-Vitals
+  shaped (load metrics), not a sustained-animation frame-time profile, so it's a load-time
+  sanity check, not proof of steady-state 60fps — the live FPS readout (90–250 range across
+  every check this session and last) remains the actual signal for CLAUDE.md's frame-budget
+  rule. A dedicated steady-state Performance-panel recording (record while idle, inspect the
+  Frames track directly) is still the more rigorous version of this check, if it's ever needed.
+
+**Still open — deferred, not blockers:**
+- Palette work is still correctly deferred to Phase 6 per the locked decision below — only Stark
+  Cyan has been visually tuned; bloom threshold will need re-tuning per-palette there.
+
+**Hard rule note:** CLAUDE.md #1/#2 were the two hardest constraints to actually satisfy here —
+see the "single rAF loop" gotcha below. Every WebGL animation in this phase (`CameraRig`,
+`ArcReactor`, `GridFloor`, `LightShafts`) reads `clockStore.getState()` inside `useFrame` and
+mutates Three objects directly; nothing GSAP-driven touches a Three.js object.
+
 ## Next session should start with
 
-Phase 2 — WebGL Core & Scene. The big one: 6–9 sessions. **Do not share this session with
-Phase 0/1 work** — shader iteration eats context fast (see ROADMAP's session-boundary rule).
-
-Deliverables:
-1. R3F canvas layered behind the existing DOM chrome (`Panel`/`Frame`/etc. stay as-is on top)
-2. Arc reactor: layered rings + custom shader (fresnel + layered noise) + instanced particles —
-   replaces the center `TickRing` placeholder in `App.tsx`
-3. Postprocessing: bloom, subtle chromatic aberration, film grain
-4. Particle field, grid floor, volumetric light shafts
-5. Camera drift — slow, continuous, never fully static — writing into `core/camera-store.ts`
-   for the first time
-6. Wire DOM parallax: panels read `getParallaxTransform()` (already implemented in
-   `camera-store.ts`, currently unused/inert since nothing writes to the store yet)
-
-**Gate:** reactor spinning and breathing, panels parallaxing in sync with camera drift. Record
-10 seconds; if it doesn't land, tune before moving on.
-
-**Hard rule to reread before starting:** CLAUDE.md #1 — GSAP never tweens a Three.js object
-directly; WebGL animates in `useFrame`, reading `clockStore` non-reactively, same pattern
-`providers/browser/perf.ts` already demonstrates.
+Phase 2 polish, not Phase 3 — the gate passed but the "Still open" list above (spoke-ring
+visibility, a real DevTools Performance-panel trace, further bloom/color-balance eyeballing)
+is genuine unfinished work, not just nice-to-haves. Read the four Phase 2 gotchas below first;
+they'll save real time. Once that polish pass is done and you're satisfied watching it for
+10+ seconds, move to Phase 3 (parallelizable across 3 agents per ROADMAP's provider burst).
 
 ---
 
@@ -144,9 +204,11 @@ directly; WebGL animates in `useFrame`, reading `clockStore` non-reactively, sam
   Decide at Phase 6 when bloom is tunable.
 - Radar module: what does it actually plot? Geo + weather + synthetic contacts is the current
   plan. Revisit in Phase 3.
-- Exactly how `getParallaxTransform()` gets called per-frame without triggering React renders
-  (CLAUDE.md's per-frame-state rule) needs a concrete pattern — likely a ref + direct style
-  mutation inside a shared rAF-driven effect, not a React state update. Work out in Phase 2.
+- ~~Exactly how `getParallaxTransform()` gets called per-frame without triggering React
+  renders~~ — resolved in Phase 2: `hud/useParallax.ts` subscribes directly to `cameraStore`
+  (a Zustand vanilla store) and mutates `style.transform` in the subscription callback. No rAF
+  of its own — `cameraStore` only updates once per tick of the single shared clock, from
+  `CameraRig`'s `useFrame`, so this is a listener on state the one true loop already produces.
 
 ---
 
@@ -162,3 +224,54 @@ directly; WebGL animates in `useFrame`, reading `clockStore` non-reactively, sam
   elements were right — worth remembering for Phase 2's layout-adjacent work (parallax
   depth, particle density): a "quiet, disciplined" restraint principle can still read as
   "empty" if negative space isn't deliberately filled with detail (see EdgeTicks fix above).
+
+**Phase 2 — four real gotchas, all worth reading before touching `scene/` again:**
+
+- **R3F's `frameloop="never"` + `advance(timestamp)` needs `timestamp` in *seconds*, not
+  milliseconds.** `advance()`'s `timestamp` feeds straight into `state.clock.elapsedTime` (a
+  `THREE.Clock`, seconds) to derive every subscriber's per-frame `delta` — there's no unit
+  conversion inside R3F. Passing `elapsed * 1000` (an easy mistake coming from
+  `requestAnimationFrame`'s own millisecond-timestamp convention) corrupts every `delta` by
+  1000x, including inside `@react-three/postprocessing`'s `EffectComposer`, and the entire
+  canvas silently renders nothing — no error, no console warning, just a blank layer. Always
+  pass `clockStore`'s `elapsed` (already seconds) directly to `advance()`.
+- **`useEffect` never fires for components mounted inside `<Canvas>` in this R3F 9 / React 19
+  setup — but `useLayoutEffect` does.** Confirmed directly: a `useEffect` writing
+  `document.title` from a component rendered as a child of `<Canvas>` never ran, even after
+  several seconds and even under `frameloop="always"`; the identical effect in a normal
+  DOM-rendered component ran immediately. `useFrame`'s own internal subscription (which
+  demonstrably *does* run every tick) relies on `useIsomorphicLayoutEffect`, not `useEffect` —
+  that's the one that's reliable here. Concretely bit `ArcReactor`'s spoke-ring instance
+  placement (a one-time `setMatrixAt` loop): written as `useEffect`, it silently never ran,
+  leaving every spoke instance collapsed at the identity matrix; switching to `useLayoutEffect`
+  fixed it. **Rule of thumb for anything added inside `scene/` going forward: any one-time
+  imperative Three.js setup goes in `useLayoutEffect`, never `useEffect`.** Anything that needs
+  to run reliably from genuinely outside-Canvas, ordinary DOM-side code (like driving `advance()`
+  itself) should live in a normal component and use the top-level `advance`/`invalidate` exports
+  from `@react-three/fiber`, not `useThree(s => s.advance)` from inside the Canvas tree.
+- **`getComputedStyle` returns CSS custom properties completely unparsed, and THREE.Color's
+  `setStyle` only accepts legacy comma-separated `hsl(h, s%, l%)` — the modern space-separated
+  `hsl(h s% l%)` `tokens.css` actually uses fails to parse and silently falls back to white,
+  with no warning surfaced anywhere obvious.** This produced a "glowing white moon" instead of
+  a cyan reactor for a long stretch of this session before being traced to the source. Fixed in
+  `core/tokens.ts`: `readTokens()` now round-trips every value through a hidden element's
+  `style.color` before returning it, which forces the browser's own CSS parser to normalize any
+  valid color syntax (hsl, oklch, named, whatever a future palette uses) to
+  `rgb(r, g, b)` — the one format both CSS and `THREE.Color` agree on. Any future code calling
+  `new THREE.Color(readTokens().something)` is safe as a result; anything that reads
+  `--hud-*` custom properties directly via `getComputedStyle` without going through
+  `readTokens()` is not.
+- **`gl.readPixels` on a WebGL context with default `preserveDrawingBuffer: false` reads back
+  all zeros shortly after each frame is presented** — the browser clears the drawing buffer
+  right after compositing to the screen. This produced a string of false "nothing is rendering"
+  signals during debugging even when the canvas visually had content (confirmed via screenshot).
+  Screenshots (the real compositor output) were the reliable ground truth throughout, not
+  `gl.readPixels`; don't reach for raw pixel readback as a rendering-sanity check on this
+  project's canvases.
+- **Vite's dev-server + HMR state got repeatedly corrupted across rapid edits to `scene/`
+  files this session** — symptoms included a completely blank canvas or an impossible FPS
+  reading (500+) that a fresh full reload didn't fix. The reliable recovery was always: kill
+  the dev server, `rm -rf node_modules/.vite`, restart, and open a brand-new tab (not just
+  navigate an existing one). Given how much shader/scene iteration Phase 2 involves, expect to
+  need this recovery again — don't over-trust a single `npm run dev` process across a long
+  `scene/`-heavy session.

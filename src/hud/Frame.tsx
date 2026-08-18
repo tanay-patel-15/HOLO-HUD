@@ -1,4 +1,9 @@
+import { useEffect, useRef } from 'react';
+import { cameraStore, getParallaxTransform } from '@/core/camera-store';
+
 const ARM = 48;
+/** The outermost frame drifts least — it's the "closest to the glass" layer. */
+const FRAME_DEPTH = 0.35;
 
 const CORNERS = [
   { position: 'top-6 left-6', rotate: 0 },
@@ -19,13 +24,29 @@ export function Frame() {
 }
 
 function CornerBracket({ position, rotate }: { position: string; rotate: number }) {
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  // Each bracket needs its own static per-corner rotation composed with the
+  // shared camera-driven parallax offset, so this reads camera-store
+  // directly (core/camera-store.ts) instead of the plain useParallax hook,
+  // which only ever writes a bare transform.
+  useEffect(() => {
+    const node = svgRef.current;
+    if (!node) return;
+    const apply = () => {
+      node.style.transform = `rotate(${rotate}deg) ${getParallaxTransform(FRAME_DEPTH)}`;
+    };
+    apply();
+    return cameraStore.subscribe((s) => s.rotation, apply);
+  }, [rotate]);
+
   return (
     <svg
+      ref={svgRef}
       aria-hidden
       width={ARM}
       height={ARM}
       className={`pointer-events-none absolute z-40 ${position}`}
-      style={{ transform: `rotate(${rotate}deg)` }}
     >
       <path
         d={`M ${ARM} 14 L 14 14 L 14 ${ARM}`}
