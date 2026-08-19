@@ -8,6 +8,7 @@ import { Scanlines } from '@/hud/effects/Scanlines';
 import { Readout } from '@/hud/primitives/Readout';
 import { DataFeed } from '@/hud/modules/DataFeed';
 import { PowerCore } from '@/hud/modules/PowerCore';
+import { Objectives } from '@/hud/modules/Objectives';
 import { Radar } from '@/hud/modules/Radar';
 import { SystemVitals } from '@/hud/modules/SystemVitals';
 import { Telemetry } from '@/hud/modules/Telemetry';
@@ -72,6 +73,9 @@ export default function App() {
                 <Radar />
                 <ThreatLevel />
               </div>
+            </Panel>
+            <Panel title="OBJECTIVES" sweepDelay={3.2} depth={1.4}>
+              <Objectives />
             </Panel>
           </div>
         </div>

@@ -4,7 +4,7 @@
 > This file is what makes a session boundary free. If a session dies, read this first,
 > then `ROADMAP.md`, then `CLAUDE.md`.
 
-**Current phase:** Phase 3 — Live Data Modules (provider layer + HUD-module wiring both done, PR open; mission objectives + layout still ahead)
+**Current phase:** Phase 3 — Live Data Modules — ✅ Done, PR open pending your merge
 **Last updated:** 2026-08-19
 
 ---
@@ -17,7 +17,7 @@
 | 0 · Skeleton & contracts | ✅ Done | Gate verified in-browser |
 | 1 · 2D HUD chrome | ✅ Done | Aesthetic gate passed, see below |
 | 2 · WebGL core & scene | ✅ Done | Gate passed, reactor polished, perf-verified, merged to `main` (PR #1). A docs-only perf follow-up (PR #2) is still open pending your merge. |
-| 3 · Live data modules | 🟡 PR open | Provider layer *and* HUD-module wiring both built and verified live — every panel in `App.tsx` now reads a real channel. Mission objectives (to-do reskin) and the Radar module's real "contacts" concept are the only pieces left — see below |
+| 3 · Live data modules | ✅ Done | Provider layer, HUD-module wiring, and mission objectives all built and verified live. PR open, not yet merged |
 | 4 · Command & voice | ⬜ Not started | |
 | 5 · Boot sequence & sound | ⬜ Not started | |
 | 6 · Polish, FX, palettes | ⬜ Not started | |
@@ -264,27 +264,48 @@ static literal strings in a `Record`, so Tailwind's build-time scan picks up all
 regardless of which renders at runtime; this is the pattern to copy for any future
 conditionally-styled channel, not a dynamically-constructed class string).
 
-**Still open:**
-- **Mission objectives** (to-do reskin, localStorage-persisted) — not started. ROADMAP lists it
-  alongside the channel table as a separate feature, not a telemetry channel, so it doesn't
-  block anything above. No existing panel slot fits it (a scrolling `Ticker` is a bad format for
-  an actionable checklist users need to read and act on) — it likely needs either a new panel or
-  a meaningful change to the current 2-panel-per-side layout, which is exactly the kind of
-  layout decision Phase 1 found needs visual iteration (screenshot, judge, adjust), not a
-  same-pass addition alongside a bunch of other changes. Deliberately deferred rather than
-  rushed.
-- **Radar module's real content.** `CONTACTS` is still a static "00" — not a fake placeholder
-  (a real radar legitimately shows zero contacts when there's nothing nearby), but ROADMAP's
-  "geo + weather + synthetic contacts" plan for what this panel actually *plots* hasn't been
-  designed or built. Unchanged open question from before this phase — see below.
+## Phase 3 — what was built (mission objectives)
+
+Added `hud/modules/Objectives.tsx` as a third panel in the right-hand stack (TELEMETRY,
+PROXIMITY, OBJECTIVES) — tried it directly rather than deciding the layout in the abstract:
+built it, screenshotted, judged it, and it held up. The stack goes from 2 panels to 3 (left
+stays at 2: VITALS, POWER CORE), which does read as mildly asymmetric — but as intentional,
+not accidental, consistent with Phase 1's own "corner-anchored and asymmetric" layout language.
+There was room: the taller right stack still clears the DATA FEED bar with a comfortable gap
+at 1920×1080.
+
+Not a telemetry channel — ROADMAP lists mission objectives separately from the channel table —
+so it isn't routed through `useTelemetry`/`registry.ts`. It's a small self-contained
+localStorage-backed component: a seeded default list (5 thematic objectives, 2 pre-completed),
+click-to-toggle-complete, persisted on every change. **Adding new objectives is deliberately
+out of scope here** — ROADMAP's Phase 4 command set explicitly lists "add objective" as a
+command-bar command, so Phase 3 only needed to cover the read/toggle half; building an add-item
+text-input flow now would just get rebuilt once the command bar exists.
+
+Verified live: toggled an objective via the browser, confirmed the write hit
+`localStorage.getItem('holo-hud:objectives')` with the updated `done` flag, then did a full
+page reload and confirmed the state (`3/5 COMPLETE`, strikethrough on the newly-completed item)
+survived — the actual point of localStorage persistence, not just that `setItem` gets called.
+
+**Radar module's real content — resolved, not deferred again.** ROADMAP's open question said
+"revisit in Phase 3"; revisiting it now rather than pushing it to a fourth open-ended pass:
+`CONTACTS` stays a static "00" and no synthetic-contacts generator was built. Geo and weather
+are both real now, but they're already surfaced in the TELEMETRY panel — duplicating them into
+a "plotted" radar visualization wouldn't add information, just decoration, and actual contact
+plotting (positioning blips around the `TickRing` from some data source) needs a data source
+that doesn't exist and isn't in ROADMAP's channel table. PROXIMITY's `TickRing` stays a
+decorative radar-sweep visual paired with the now-real `THREAT` assessment; "00 contacts" is a
+legitimate empty scan result, not a placeholder standing in for missing work. See "Decisions
+locked" below — this is now a closed decision, not an open question.
 
 ## Next session should start with
 
-Mission objectives — the one remaining Phase 3 deliverable with real design weight. Needs a
-layout decision (new panel vs. reworking the existing 2-panel side stacks) made the same way
-Phase 1's layout was tuned: build, screenshot, judge, adjust — not guessed at in the abstract.
-Once that's in and verified live, Phase 3's ROADMAP "done looks like" gate is fully met and
-Phase 4 (Command & Voice) is next.
+Phase 4 — Command & Voice. Phase 3's ROADMAP "done looks like" gate is fully met: every panel
+live, nothing renders `undefined`, permission denial and force-disable both degrade cleanly,
+mission objectives work end-to-end. Read ROADMAP's Phase 4 section — the intent parser is the
+shared core (text and voice both produce the same intent objects), and "add objective" is
+explicitly one of its commands, which is what finally closes the loop on `Objectives.tsx` only
+supporting read/toggle today.
 
 ---
 
@@ -302,6 +323,14 @@ Phase 4 (Command & Voice) is next.
   file.
 - Panel chrome signature is angular clip-path corners, not rounded — locked in Phase 1, don't
   reintroduce border-radius on HUD chrome without deliberately revisiting this.
+- Radar module (`PROXIMITY` panel) plots nothing — `TickRing` is a decorative radar-sweep
+  visual, `CONTACTS` stays a static "00" (a legitimate empty scan result, not a placeholder).
+  No synthetic-contacts generator, resolved in Phase 3 rather than left open — see that
+  section's writeup for the reasoning. Revisit only if a real reason to plot something on it
+  shows up later; don't build contact-plotting speculatively.
+- Mission objectives support read + toggle-complete only, no add-new UI, deliberately — Phase 4's
+  command bar owns "add objective" per ROADMAP's command set. Don't build an add-item text
+  input before the command bar exists; it'd just get replaced.
 
 ---
 
@@ -309,13 +338,13 @@ Phase 4 (Command & Voice) is next.
 
 - Which palette ships as default? Leaning Stark Cyan, but Clean Violet reads less dated.
   Decide at Phase 6 when bloom is tunable.
-- Radar module: what does it actually plot? Geo + weather + synthetic contacts is the current
-  plan. Revisit in Phase 3.
 - ~~Exactly how `getParallaxTransform()` gets called per-frame without triggering React
   renders~~ — resolved in Phase 2: `hud/useParallax.ts` subscribes directly to `cameraStore`
   (a Zustand vanilla store) and mutates `style.transform` in the subscription callback. No rAF
   of its own — `cameraStore` only updates once per tick of the single shared clock, from
   `CameraRig`'s `useFrame`, so this is a listener on state the one true loop already produces.
+- ~~Radar module: what does it actually plot?~~ — resolved in Phase 3, see "Decisions locked"
+  above.
 
 ---
 
