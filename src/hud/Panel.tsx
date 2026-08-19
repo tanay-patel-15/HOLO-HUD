@@ -5,6 +5,8 @@ interface PanelProps {
   title: string;
   children: ReactNode;
   className?: string;
+  /** Fill class — CommandBar uses a lower opacity so the reactor stays visible. */
+  surfaceClassName?: string;
   /** Staggers the scan sweep so panels don't all animate in lockstep. */
   sweepDelay?: number;
   /** How far off the screen plane this panel feels — see useParallax. */
@@ -21,13 +23,20 @@ const CHAMFER = 14;
  * sync with the WebGL scene behind it (ROADMAP's "DOM owns every glyph"
  * architecture, wired up in Phase 2).
  */
-export function Panel({ title, children, className = '', sweepDelay = 0, depth = 1 }: PanelProps) {
+export function Panel({
+  title,
+  children,
+  className = '',
+  surfaceClassName = 'bg-hud-surface/70',
+  sweepDelay = 0,
+  depth = 1,
+}: PanelProps) {
   const parallaxRef = useParallax<HTMLDivElement>(depth);
 
   return (
     <div
       ref={parallaxRef}
-      className={`relative border border-hud-border bg-hud-surface/70 ${className}`}
+      className={`relative border border-hud-border ${surfaceClassName} ${className}`}
       style={{
         clipPath: `polygon(${CHAMFER}px 0, 100% 0, 100% calc(100% - ${CHAMFER}px), calc(100% - ${CHAMFER}px) 100%, 0 100%, 0 ${CHAMFER}px)`,
         willChange: 'transform',

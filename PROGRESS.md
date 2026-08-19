@@ -4,7 +4,7 @@
 > This file is what makes a session boundary free. If a session dies, read this first,
 > then `ROADMAP.md`, then `CLAUDE.md`.
 
-**Current phase:** Phase 3 — Live Data Modules — ✅ Done, PR open pending your merge
+**Current phase:** Phase 4 — Command & Voice — ✅ Done, branch `worktree-phase4-command-voice` pending merge
 **Last updated:** 2026-08-19
 
 ---
@@ -17,8 +17,8 @@
 | 0 · Skeleton & contracts | ✅ Done | Gate verified in-browser |
 | 1 · 2D HUD chrome | ✅ Done | Aesthetic gate passed, see below |
 | 2 · WebGL core & scene | ✅ Done | Gate passed, reactor polished, perf-verified, merged to `main` (PR #1). A docs-only perf follow-up (PR #2) is still open pending your merge. |
-| 3 · Live data modules | ✅ Done | Provider layer, HUD-module wiring, and mission objectives all built and verified live. PR open, not yet merged |
-| 4 · Command & voice | ⬜ Not started | |
+| 3 · Live data modules | ✅ Done | Provider layer, HUD-module wiring, and mission objectives. Merged to `main` (PR #3). |
+| 4 · Command & voice | ✅ Done | Shared intent parser, overlay CommandBar, PTT voice-in / voice-out. Branch not yet merged |
 | 5 · Boot sequence & sound | ⬜ Not started | |
 | 6 · Polish, FX, palettes | ⬜ Not started | |
 
@@ -298,14 +298,41 @@ decorative radar-sweep visual paired with the now-real `THREAT` assessment; "00 
 legitimate empty scan result, not a placeholder standing in for missing work. See "Decisions
 locked" below — this is now a closed decision, not an open question.
 
+## Phase 4 — what was built
+
+Shared intent parser + overlay command bar + hybrid push-to-talk, matching ROADMAP's
+`src/command/` tree and the spec in `docs/superpowers/specs/2026-08-19-command-voice-design.md`.
+
+```
+src/command/
+  parser.ts           # parse(text) → Intent | null; strips optional jarvis, prefix
+  intents.ts          # handleIntent(intent) → { log }; never speaks, never navigator.*
+  CommandBar.tsx      # center-gap overlay; the only place that knows source text|voice
+  voice-input.ts      # SpeechRecognition / webkitSpeechRecognition PTT start/stop
+  voice-output.ts     # speechSynthesis.speak / cancel — no-op if missing
+  threat-override.ts  # session-only Zustand override; derived threat.ts unchanged
+src/hud/modules/objectives-store.ts  # list lifted so add-objective can write it
+src/telemetry/registry.ts            # last-value cache + peekChannel() for diagnostics
+```
+
+- **One pipeline:** typed string and PTT transcript both go through `parse()` then `handleIntent()`. `speak(log)` runs only when `source === 'voice'`.
+- **Command set:** diagnostics (peek live channels), add objective, set/reset threat, stubs for `swap palette` / `navigate`, easter eggs `sudo` and `i am iron man` (log only — no shutdown).
+- **UX:** `Panel title="COMMAND"` low in the reactor gap (`max-w-[560px]`, lighter `bg-hud-surface/40`). `/` focuses without inserting. Hold backtick or hold mic glyph for PTT. Ghost-suffix autocomplete from canonical phrases.
+- **Objectives:** panel still toggles; `add objective TEST ITEM` appends and persists under `holo-hud:objectives`.
+- **Threat:** `ThreatLevel` prefers `useThreatOverride()` over `useTelemetry('threat.level')`. Reload (or `reset threat`) returns to derived.
+
+**Verified live (Playwright Chromium against `npm run dev`, not just typecheck):**
+- `run diagnostics` and `JARVIS, run diagnostics` both dump live values (real GPU string, fps, etc.)
+- `set threat critical` → THREAT `text-hud-danger`; `reset threat` → derived NOMINAL cyan
+- `add objective TEST ITEM` appears on the panel and in localStorage
+- `swap palette` / `navigate` stubs; `sudo` → `Nice try, sir.`; empty `add objective` → `Add what, sir.`
+- `/` focuses the input; empty PTT release does **not** log "unrecognized"
+- `tsc -b`, `oxlint`, `npm run build` clean. Zero console *errors* (pre-existing THREE.Clock deprecation warning only)
+- Spoken-phrase-through-the-mic was not live-recorded in this automated pass (no audio fixture). SpeechRecognition is present; PTT start/stop degrades to empty-ignore; the voice path is the same `dispatch(transcript, 'voice')` as typing.
+
 ## Next session should start with
 
-Phase 4 — Command & Voice. Phase 3's ROADMAP "done looks like" gate is fully met: every panel
-live, nothing renders `undefined`, permission denial and force-disable both degrade cleanly,
-mission objectives work end-to-end. Read ROADMAP's Phase 4 section — the intent parser is the
-shared core (text and voice both produce the same intent objects), and "add objective" is
-explicitly one of its commands, which is what finally closes the loop on `Objectives.tsx` only
-supporting read/toggle today.
+Phase 5 — Boot Sequence & Sound. Phase 4's ROADMAP gate is met: `"JARVIS, run diagnostics"` is one `parse()` path for typed input (including the optional `JARVIS,` prefix) and for PTT transcripts. Read ROADMAP's Phase 5 beat sheet — GSAP owns the boot timeline, Howler + `OscillatorNode` synth own audio, and Phase 4's `speak()` / `cancelSpeech()` should be wrapped by the same persisted mute, not a second audio system. `easter_iron_man` is deliberately a log line today; the cinematic shutdown waits for this phase's boot timeline so it can reverse it.
 
 ---
 
@@ -328,9 +355,9 @@ supporting read/toggle today.
   No synthetic-contacts generator, resolved in Phase 3 rather than left open — see that
   section's writeup for the reasoning. Revisit only if a real reason to plot something on it
   shows up later; don't build contact-plotting speculatively.
-- Mission objectives support read + toggle-complete only, no add-new UI, deliberately — Phase 4's
-  command bar owns "add objective" per ROADMAP's command set. Don't build an add-item text
-  input before the command bar exists; it'd just get replaced.
+- Mission objectives: panel is still read + toggle-complete only — **adding** is a command (`add objective <text>`), not a text input in the panel. Don't add an in-panel composer.
+- Voice is hybrid push-to-talk (hold backtick or hold mic glyph). Spoken wake-word listening is Phase 6. Typed `JARVIS,` is an optional prefix `parse()` strips.
+- `swap palette` and `navigate` are real parser hits with in-universe stub replies. Do not pull palette CSS or camera navigation into a later patch of Phase 4 — Phase 6 fills those handlers.
 
 ---
 
@@ -411,6 +438,10 @@ supporting read/toggle today.
   navigate an existing one). Given how much shader/scene iteration Phase 2 involves, expect to
   need this recovery again — don't over-trust a single `npm run dev` process across a long
   `scene/`-heavy session.
+
+**Phase 4 — a voice-API gotcha:**
+
+- **Empty PTT must not log "unrecognized".** `SpeechRecognition.stop()` often fires `onend` with no `onresult` (user held the key and said nothing, or the engine heard silence). Treat that as `reason: 'empty'` and ignore it. Logging `Command not recognized, sir.` on every aborted hold makes the bar feel broken. Permission denial (`not-allowed`) is the other distinct case — that one *does* get an in-universe line.
 
 **Phase 3 — a provider gotcha worth remembering for any future permission-gated channel:**
 

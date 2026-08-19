@@ -14,6 +14,7 @@ import { SystemVitals } from '@/hud/modules/SystemVitals';
 import { Telemetry } from '@/hud/modules/Telemetry';
 import { ThreatLevel } from '@/hud/modules/ThreatLevel';
 import { Weather } from '@/hud/modules/Weather';
+import { CommandBar } from '@/command/CommandBar';
 import { SceneCanvas } from '@/scene/Scene';
 import { useTelemetry } from '@/telemetry/useTelemetry';
 
@@ -57,9 +58,11 @@ export default function App() {
             </Panel>
           </div>
 
-          {/* Deliberately empty — the arc reactor renders here in WebGL,
-              behind this transparent gap, framed by the panels around it. */}
-          <div className="flex-1" />
+          {/* Reactor sits in WebGL behind this gap. CommandBar is a low
+              overlay so DATA FEED stays the only bottom hairline bar. */}
+          <div className="flex flex-1 flex-col items-center justify-end px-4">
+            <CommandBar />
+          </div>
 
           <div className="flex w-80 flex-col gap-6">
             <Panel title="TELEMETRY" sweepDelay={0.6} depth={1.4}>
