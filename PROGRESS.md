@@ -4,8 +4,8 @@
 > This file is what makes a session boundary free. If a session dies, read this first,
 > then `ROADMAP.md`, then `CLAUDE.md`.
 
-**Current phase:** Phase 2 — WebGL Core & Scene (gate passed, reactor polished, PR open)
-**Last updated:** 2026-08-11
+**Current phase:** Phase 3 — Live Data Modules — ✅ Done, PR open pending your merge
+**Last updated:** 2026-08-19
 
 ---
 
@@ -16,8 +16,8 @@
 | −1 · Durable docs | ✅ Done | `ROADMAP.md`, `PROGRESS.md`, `CLAUDE.md` written |
 | 0 · Skeleton & contracts | ✅ Done | Gate verified in-browser |
 | 1 · 2D HUD chrome | ✅ Done | Aesthetic gate passed, see below |
-| 2 · WebGL core & scene | 🟡 PR open | All 6 deliverables built, verified live, reactor polished (spoke ring, hot-vein shader detail), perf-traced — see below. PR #1, not yet merged |
-| 3 · Live data modules | ⬜ Not started | Parallelize across 3 agents |
+| 2 · WebGL core & scene | ✅ Done | Gate passed, reactor polished, perf-verified, merged to `main` (PR #1). A docs-only perf follow-up (PR #2) is still open pending your merge. |
+| 3 · Live data modules | ✅ Done | Provider layer, HUD-module wiring, and mission objectives all built and verified live. PR open, not yet merged |
 | 4 · Command & voice | ⬜ Not started | |
 | 5 · Boot sequence & sound | ⬜ Not started | |
 | 6 · Polish, FX, palettes | ⬜ Not started | |
@@ -171,13 +171,141 @@ see the "single rAF loop" gotcha below. Every WebGL animation in this phase (`Ca
 `ArcReactor`, `GridFloor`, `LightShafts`) reads `clockStore.getState()` inside `useFrame` and
 mutates Three objects directly; nothing GSAP-driven touches a Three.js object.
 
+## Phase 3 — what was built (provider layer)
+
+The full channel table from ROADMAP's Phase 3 spec now has a real primary provider and a
+simulated fallback wired into `telemetry/registry.ts`. This was the parallelizable "strong
+case" burst ROADMAP calls out — dispatched to 3 agents against a contract locked up front:
+
+```
+src/telemetry/
+  types.ts              # ChannelMap extended to all 16 channels (was 1 — perf.fps — before this phase)
+  registry.ts            # every channel's {primary, fallback} pair, wired by hand after the burst landed
+  derived/
+    threat.ts             # 'threat.level' — composes perf.jank + power.level + hour-of-day, not a raw API
+  providers/
+    browser/
+      perf.ts               # perf.fps (existing) + perf.jank (new, same rolling-window-over-clockStore idea)
+      audio-fft.ts           # audio.fft — getUserMedia + AnalyserNode, 32 bins
+      battery.ts              # power.level, power.charging — event-driven (levelchange/chargingchange)
+      network.ts               # net.type, net.downlink — event-driven (connection 'change')
+      gpu.ts                    # sys.gpu — one-shot WEBGL_debug_renderer_info probe, cached
+      sysinfo.ts                 # sys.cores (one-shot), sys.heap (polled), sys.memory (one-shot)
+      geo.ts                      # geo.lat, geo.lon — watchPosition
+      weather.ts                   # weather.temp, weather.condition — Open-Meteo, shared poll loop
+    simulated/
+      perf.ts (+jank), audio.ts, battery.ts, network.ts, sysinfo.ts, geo.ts, weather.ts
+      # one "seeded noise generator" file per browser/ counterpart, same shape as Phase 0's
+      # simulated/perf.ts reference
+```
+
+**Agent split** (exact ROADMAP assignment): Agent A → audio + perf.jank. Agent B → battery,
+network, gpu, sysinfo (all real/browser only). Agent C → geo + weather (real/browser) *and*
+every simulated fallback for every channel, per ROADMAP's literal table. None of the three
+touched `types.ts` or `registry.ts` — those were locked/integrated by hand before and after the
+burst respectively, so there was no file overlap and no merge coordination needed between them.
+
+**Verified live, not just typechecked** — this is the part that actually matters and where a
+real bug turned up (see gotchas): mounted a temporary debug harness (`DebugTelemetry.tsx`,
+swapped in via `main.tsx`, deleted before committing — never shipped) rendering all 16 channels'
+raw values as text, in-browser. Confirmed:
+- Every channel shows a real value on this machine (real GPU string, real core count, real
+  device memory, real — and changing — network/heap/battery readings), nothing renders
+  `undefined`.
+- `geo.lat`/`geo.lon` initially rendered as `undefined` indefinitely — a real bug, not a
+  simulated-fallback smell — because `browser/geo.ts`'s `subscribe()` only emitted from inside
+  `watchPosition`'s async callback, with nothing synchronous first. In an environment where the
+  permission prompt never resolves (this automated browser, but also just a slow-to-answer real
+  user), the channel sat at `undefined` forever. Fixed by adding an immediate synchronous
+  `emit(fallbackBase)` before calling `watchPosition`, matching the pattern
+  `browser/audio-fft.ts` already used correctly for the same kind of permission-gated API.
+- Force-disabling a provider (temporarily hardcoded `browserMemoryProvider.isAvailable()` to
+  `false`, reloaded, reverted after) correctly fell through to the simulated value — confirms
+  the registry-level primary/fallback swap mechanism (unchanged since Phase 0) still works
+  correctly with all 15 new channels registered.
+
+**Not started yet — the actual remaining Phase 3 work:**
+## Phase 3 — what was built (HUD-module wiring)
+
+`App.tsx` no longer has a single hardcoded placeholder value — every panel reads a real channel
+through a new `hud/modules/` component, matching ROADMAP's file tree:
+
+```
+src/hud/modules/
+  SystemVitals.tsx    # VITALS panel: MEM % (sys.heap normalized against a 300MB nominal ceiling,
+                       # purely for the gauge's 0-100 display range) + STABLE % (100 - jank*12)
+  PowerCore.tsx        # POWER CORE panel: BarMeter(power.level) + Readout(power.charging status)
+  Telemetry.tsx         # TELEMETRY panel: LAT/LON (geo.lat/lon, formatted with N/S, E/W)
+  Weather.tsx            # TELEMETRY panel: TEMP (weather.temp) — composed alongside Telemetry
+  Radar.tsx               # PROXIMITY panel: TickRing + CONTACTS (still synthetic "00" — see below)
+  ThreatLevel.tsx          # PROXIMITY panel: THREAT, color-coded NOMINAL/ELEVATED/CRITICAL
+  DataFeed.tsx              # DATA FEED ticker: static thematic lines + live GPU/net/weather/nav lines
+```
+
+UPTIME and LINK in the SYSTEM STATUS bar stayed inline in `App.tsx` (small enough not to need
+their own module file, matching how `LiveFpsReadout` was already inlined there) — UPTIME reads
+`core/clock.ts`'s shared clock directly (not a telemetry channel; this is the sanctioned central
+clock every other timing in the app already uses) via a selector that floors to whole seconds,
+so it only re-renders once a second instead of every frame. CALLSIGN stays a static identity
+label — there's no sensor for a callsign, so it was left as narrative flavor rather than forced
+into the channel abstraction.
+
+Added one small primitive change: `Readout` gained an optional `valueClassName` prop (defaults
+to the existing `text-hud-text`) so `ThreatLevel` can color-code by threat level. Wrapping
+`Readout` in a colored parent `div` does **not** work — the value `span` hardcodes its own text
+color class, which wins over an ancestor's color regardless of DOM nesting (CSS specificity, not
+inheritance) — caught this before shipping it, not after.
+
+**Verified live in Chrome**, not just typechecked: every panel shows a real value simultaneously
+(GPU string, core count, real/changing heap and network figures, UPTIME ticking, FPS climbing as
+the page settles); `THREAT` correctly renders NOMINAL in cyan and — temporarily forcing the
+threat thresholds, screenshotting, then reverting — CRITICAL in red (all three color classes are
+static literal strings in a `Record`, so Tailwind's build-time scan picks up all of them
+regardless of which renders at runtime; this is the pattern to copy for any future
+conditionally-styled channel, not a dynamically-constructed class string).
+
+## Phase 3 — what was built (mission objectives)
+
+Added `hud/modules/Objectives.tsx` as a third panel in the right-hand stack (TELEMETRY,
+PROXIMITY, OBJECTIVES) — tried it directly rather than deciding the layout in the abstract:
+built it, screenshotted, judged it, and it held up. The stack goes from 2 panels to 3 (left
+stays at 2: VITALS, POWER CORE), which does read as mildly asymmetric — but as intentional,
+not accidental, consistent with Phase 1's own "corner-anchored and asymmetric" layout language.
+There was room: the taller right stack still clears the DATA FEED bar with a comfortable gap
+at 1920×1080.
+
+Not a telemetry channel — ROADMAP lists mission objectives separately from the channel table —
+so it isn't routed through `useTelemetry`/`registry.ts`. It's a small self-contained
+localStorage-backed component: a seeded default list (5 thematic objectives, 2 pre-completed),
+click-to-toggle-complete, persisted on every change. **Adding new objectives is deliberately
+out of scope here** — ROADMAP's Phase 4 command set explicitly lists "add objective" as a
+command-bar command, so Phase 3 only needed to cover the read/toggle half; building an add-item
+text-input flow now would just get rebuilt once the command bar exists.
+
+Verified live: toggled an objective via the browser, confirmed the write hit
+`localStorage.getItem('holo-hud:objectives')` with the updated `done` flag, then did a full
+page reload and confirmed the state (`3/5 COMPLETE`, strikethrough on the newly-completed item)
+survived — the actual point of localStorage persistence, not just that `setItem` gets called.
+
+**Radar module's real content — resolved, not deferred again.** ROADMAP's open question said
+"revisit in Phase 3"; revisiting it now rather than pushing it to a fourth open-ended pass:
+`CONTACTS` stays a static "00" and no synthetic-contacts generator was built. Geo and weather
+are both real now, but they're already surfaced in the TELEMETRY panel — duplicating them into
+a "plotted" radar visualization wouldn't add information, just decoration, and actual contact
+plotting (positioning blips around the `TickRing` from some data source) needs a data source
+that doesn't exist and isn't in ROADMAP's channel table. PROXIMITY's `TickRing` stays a
+decorative radar-sweep visual paired with the now-real `THREAT` assessment; "00 contacts" is a
+legitimate empty scan result, not a placeholder standing in for missing work. See "Decisions
+locked" below — this is now a closed decision, not an open question.
+
 ## Next session should start with
 
-Phase 2 polish, not Phase 3 — the gate passed but the "Still open" list above (spoke-ring
-visibility, a real DevTools Performance-panel trace, further bloom/color-balance eyeballing)
-is genuine unfinished work, not just nice-to-haves. Read the four Phase 2 gotchas below first;
-they'll save real time. Once that polish pass is done and you're satisfied watching it for
-10+ seconds, move to Phase 3 (parallelizable across 3 agents per ROADMAP's provider burst).
+Phase 4 — Command & Voice. Phase 3's ROADMAP "done looks like" gate is fully met: every panel
+live, nothing renders `undefined`, permission denial and force-disable both degrade cleanly,
+mission objectives work end-to-end. Read ROADMAP's Phase 4 section — the intent parser is the
+shared core (text and voice both produce the same intent objects), and "add objective" is
+explicitly one of its commands, which is what finally closes the loop on `Objectives.tsx` only
+supporting read/toggle today.
 
 ---
 
@@ -195,6 +323,14 @@ they'll save real time. Once that polish pass is done and you're satisfied watch
   file.
 - Panel chrome signature is angular clip-path corners, not rounded — locked in Phase 1, don't
   reintroduce border-radius on HUD chrome without deliberately revisiting this.
+- Radar module (`PROXIMITY` panel) plots nothing — `TickRing` is a decorative radar-sweep
+  visual, `CONTACTS` stays a static "00" (a legitimate empty scan result, not a placeholder).
+  No synthetic-contacts generator, resolved in Phase 3 rather than left open — see that
+  section's writeup for the reasoning. Revisit only if a real reason to plot something on it
+  shows up later; don't build contact-plotting speculatively.
+- Mission objectives support read + toggle-complete only, no add-new UI, deliberately — Phase 4's
+  command bar owns "add objective" per ROADMAP's command set. Don't build an add-item text
+  input before the command bar exists; it'd just get replaced.
 
 ---
 
@@ -202,13 +338,13 @@ they'll save real time. Once that polish pass is done and you're satisfied watch
 
 - Which palette ships as default? Leaning Stark Cyan, but Clean Violet reads less dated.
   Decide at Phase 6 when bloom is tunable.
-- Radar module: what does it actually plot? Geo + weather + synthetic contacts is the current
-  plan. Revisit in Phase 3.
 - ~~Exactly how `getParallaxTransform()` gets called per-frame without triggering React
   renders~~ — resolved in Phase 2: `hud/useParallax.ts` subscribes directly to `cameraStore`
   (a Zustand vanilla store) and mutates `style.transform` in the subscription callback. No rAF
   of its own — `cameraStore` only updates once per tick of the single shared clock, from
   `CameraRig`'s `useFrame`, so this is a listener on state the one true loop already produces.
+- ~~Radar module: what does it actually plot?~~ — resolved in Phase 3, see "Decisions locked"
+  above.
 
 ---
 
@@ -275,3 +411,19 @@ they'll save real time. Once that polish pass is done and you're satisfied watch
   navigate an existing one). Given how much shader/scene iteration Phase 2 involves, expect to
   need this recovery again — don't over-trust a single `npm run dev` process across a long
   `scene/`-heavy session.
+
+**Phase 3 — a provider gotcha worth remembering for any future permission-gated channel:**
+
+- **A `TelemetryProvider` backed by a permission-prompting API (geolocation, `getUserMedia`,
+  and anything similar in the future) must emit a fallback value *synchronously* on
+  `subscribe()`, before the permission decision resolves — not just from inside the eventual
+  success/error callback.** `browser/geo.ts` initially only emitted from inside
+  `watchPosition`'s callbacks; in an environment where the permission prompt never gets
+  answered (this session's automated browser had no human to click "Allow," but a slow real
+  user has the same effect for however many seconds they take to decide), the channel sat at
+  `undefined` indefinitely — a direct violation of "nothing renders `undefined`."
+  `browser/audio-fft.ts` got this right from the start (emits synthetic data immediately, swaps
+  to real data if/when `getUserMedia` resolves) — that's the pattern to copy. Caught by actually
+  mounting a debug harness and watching real output in the browser, not by reading the code or
+  trusting a subagent's self-reported typecheck/lint pass — both were clean and said nothing
+  about this, because the bug was a runtime timing issue, not a type error.

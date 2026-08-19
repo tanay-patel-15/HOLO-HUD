@@ -29,3 +29,34 @@ export const browserPerfProvider: TelemetryProvider<number> = {
     );
   },
 };
+
+const JANK_WINDOW_MS = 1000;
+const FRAME_BUDGET_MS = 16.67;
+
+export const browserJankProvider: TelemetryProvider<number> = {
+  isAvailable() {
+    return typeof requestAnimationFrame === 'function';
+  },
+
+  subscribe(emit) {
+    const overBudgetFrameTimestamps: number[] = [];
+    let elapsedMs = 0;
+
+    return clockStore.subscribe(
+      (state) => state.delta,
+      (delta) => {
+        if (delta <= 0) return;
+        const deltaMs = delta * 1000;
+        elapsedMs += deltaMs;
+        if (deltaMs > FRAME_BUDGET_MS) overBudgetFrameTimestamps.push(elapsedMs);
+
+        const windowStart = elapsedMs - JANK_WINDOW_MS;
+        while (overBudgetFrameTimestamps.length > 0 && overBudgetFrameTimestamps[0] < windowStart) {
+          overBudgetFrameTimestamps.shift();
+        }
+
+        emit(overBudgetFrameTimestamps.length);
+      },
+    );
+  },
+};
