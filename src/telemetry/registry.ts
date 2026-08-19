@@ -55,6 +55,8 @@ const registry: Registry = {
   'threat.level': { primary: derivedThreatProvider, fallback: derivedThreatProvider },
 };
 
+const lastValues: Partial<{ [K in Channel]: ChannelMap[K] }> = {};
+
 /**
  * Subscribes to a channel, transparently using the primary provider when
  * it's available in this environment and falling back otherwise — the
@@ -66,5 +68,17 @@ export function subscribeChannel<K extends Channel>(
 ): Unsubscribe {
   const entry = registry[channel];
   const provider = entry.primary.isAvailable() ? entry.primary : entry.fallback;
-  return provider.subscribe(emit);
+  return provider.subscribe((value) => {
+    lastValues[channel] = value;
+    emit(value);
+  });
+}
+
+/**
+ * Last-known value for a channel, for non-React readers (command handlers).
+ * Components still use `useTelemetry`. Undefined until at least one
+ * subscriber has received the provider's mandatory first emit.
+ */
+export function peekChannel<K extends Channel>(channel: K): ChannelMap[K] | undefined {
+  return lastValues[channel];
 }

@@ -1,7 +1,7 @@
 # Phase 4 — Command & Voice
 
 **Date:** 2026-08-19
-**Status:** Approved design, pending implementation plan
+**Status:** Implemented on `worktree-phase4-command-voice`
 **Gate:** `"JARVIS, run diagnostics"` works spoken *and* typed, through one code path.
 
 ## Context

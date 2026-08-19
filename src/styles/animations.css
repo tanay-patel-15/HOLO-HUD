@@ -34,6 +34,12 @@
   }
 }
 
+@keyframes hud-mic-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
 .animate-hud-slow-spin {
   animation: hud-slow-spin 90s linear infinite;
 }
@@ -44,4 +50,8 @@
 
 .animate-hud-ticker {
   animation: hud-ticker-scroll 22s linear infinite;
+}
+
+.animate-hud-mic-pulse {
+  animation: hud-mic-pulse 1.096s ease-in-out infinite; /* 8 × 137ms */
 }
