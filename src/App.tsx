@@ -1,32 +1,28 @@
-import { useStartClock } from '@/core/clock';
+import { useClock, useStartClock } from '@/core/clock';
 import { Stage } from '@/core/stage';
 import { Frame } from '@/hud/Frame';
 import { Panel } from '@/hud/Panel';
 import { EdgeTicks } from '@/hud/effects/EdgeTicks';
 import { HexGrid } from '@/hud/effects/HexGrid';
 import { Scanlines } from '@/hud/effects/Scanlines';
-import { ArcGauge } from '@/hud/primitives/ArcGauge';
-import { BarMeter } from '@/hud/primitives/BarMeter';
 import { Readout } from '@/hud/primitives/Readout';
-import { TickRing } from '@/hud/primitives/TickRing';
-import { Ticker } from '@/hud/primitives/Ticker';
+import { DataFeed } from '@/hud/modules/DataFeed';
+import { PowerCore } from '@/hud/modules/PowerCore';
+import { Radar } from '@/hud/modules/Radar';
+import { SystemVitals } from '@/hud/modules/SystemVitals';
+import { Telemetry } from '@/hud/modules/Telemetry';
+import { ThreatLevel } from '@/hud/modules/ThreatLevel';
+import { Weather } from '@/hud/modules/Weather';
 import { SceneCanvas } from '@/scene/Scene';
 import { useTelemetry } from '@/telemetry/useTelemetry';
 
-const DATA_FEED = [
-  'SYS.CORE :: NOMINAL',
-  'REACTOR :: STANDBY',
-  'COMMS :: ENCRYPTED LINK ACTIVE',
-  'DIAG :: NO FAULTS DETECTED',
-  'NAV :: AWAITING TELEMETRY UPLINK',
-];
-
 /**
- * Phase 2: the R3F canvas now owns the center of the frame — the arc
- * reactor replaces the Phase 1 TickRing placeholder, rendered in WebGL
- * behind the DOM chrome (ROADMAP's "WebGL owns the world" split). Panels
- * still carry only placeholder values; Phase 3 replaces them with live
- * telemetry channels.
+ * Phase 3: every panel now reads a live telemetry channel via
+ * `hud/modules/` instead of Phase 1's hardcoded placeholder values —
+ * CALLSIGN stays a static identity label (there's no sensor for a
+ * callsign), everything else in SYSTEM STATUS and every panel below it is
+ * real (or, absent a real API, the registry's simulated fallback —
+ * CLAUDE.md #4, the component never knows which).
  */
 export default function App() {
   useStartClock();
@@ -44,26 +40,19 @@ export default function App() {
         <Panel title="SYSTEM STATUS" sweepDelay={0} depth={0.7}>
           <div className="flex items-center justify-between gap-10">
             <Readout label="CALLSIGN" value="MARK-I" />
-            <Readout label="DATE" value="2026.08.11" />
-            <Readout label="UPTIME" value="T+ 04:12:33" />
+            <LiveUptimeReadout />
             <LiveFpsReadout />
-            <Readout label="LINK" value="STABLE" align="right" />
+            <LiveLinkReadout />
           </div>
         </Panel>
 
         <div className="flex flex-1 items-center justify-between gap-12 py-6">
           <div className="flex w-80 flex-col gap-6">
             <Panel title="VITALS" sweepDelay={1.2} depth={1.4}>
-              <div className="flex items-center justify-around">
-                <ArcGauge value={72} label="O2 SAT" unit="%" size={128} />
-                <ArcGauge value={58} label="HEART" unit="bpm" size={104} />
-              </div>
+              <SystemVitals />
             </Panel>
             <Panel title="POWER CORE" sweepDelay={2.4} depth={1.4}>
-              <div className="flex flex-col gap-3">
-                <BarMeter value={86} label="OUTPUT" />
-                <Readout label="RESERVE" value={86} unit="%" />
-              </div>
+              <PowerCore />
             </Panel>
           </div>
 
@@ -74,22 +63,21 @@ export default function App() {
           <div className="flex w-80 flex-col gap-6">
             <Panel title="TELEMETRY" sweepDelay={0.6} depth={1.4}>
               <div className="flex flex-col gap-2.5">
-                <Readout label="LAT" value="40.7128 N" />
-                <Readout label="LON" value="74.0060 W" />
-                <Readout label="ALT" value={212} unit="m" />
+                <Telemetry />
+                <Weather />
               </div>
             </Panel>
             <Panel title="PROXIMITY" sweepDelay={1.8} depth={1.4}>
-              <div className="flex items-center gap-5">
-                <TickRing size={96} majorCount={8} minorPerMajor={2} />
-                <Readout label="CONTACTS" value="00" />
+              <div className="flex flex-col gap-3">
+                <Radar />
+                <ThreatLevel />
               </div>
             </Panel>
           </div>
         </div>
 
         <Panel title="DATA FEED" sweepDelay={3} depth={0.7}>
-          <Ticker items={DATA_FEED} />
+          <DataFeed />
         </Panel>
       </div>
     </Stage>
@@ -99,4 +87,22 @@ export default function App() {
 function LiveFpsReadout() {
   const fps = useTelemetry('perf.fps');
   return <Readout label="FRAME" value={fps ?? '--'} unit="fps" />;
+}
+
+function LiveLinkReadout() {
+  const netType = useTelemetry('net.type');
+  return <Readout label="LINK" value={netType?.toUpperCase() ?? '--'} align="right" />;
+}
+
+function formatUptime(elapsedSeconds: number): string {
+  const total = Math.floor(elapsedSeconds);
+  const hh = String(Math.floor(total / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+  const ss = String(total % 60).padStart(2, '0');
+  return `T+ ${hh}:${mm}:${ss}`;
+}
+
+function LiveUptimeReadout() {
+  const elapsed = useClock((state) => Math.floor(state.elapsed));
+  return <Readout label="UPTIME" value={formatUptime(elapsed)} />;
 }

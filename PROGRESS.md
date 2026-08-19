@@ -4,7 +4,7 @@
 > This file is what makes a session boundary free. If a session dies, read this first,
 > then `ROADMAP.md`, then `CLAUDE.md`.
 
-**Current phase:** Phase 3 — Live Data Modules (telemetry provider layer done, PR open; HUD-module wiring still ahead)
+**Current phase:** Phase 3 — Live Data Modules (provider layer + HUD-module wiring both done, PR open; mission objectives + layout still ahead)
 **Last updated:** 2026-08-19
 
 ---
@@ -17,7 +17,7 @@
 | 0 · Skeleton & contracts | ✅ Done | Gate verified in-browser |
 | 1 · 2D HUD chrome | ✅ Done | Aesthetic gate passed, see below |
 | 2 · WebGL core & scene | ✅ Done | Gate passed, reactor polished, perf-verified, merged to `main` (PR #1). A docs-only perf follow-up (PR #2) is still open pending your merge. |
-| 3 · Live data modules | 🟡 PR open | Every Phase 3 channel's provider pair built, wired, and verified live in-browser (real data, permission-denial degrades cleanly, force-disable falls back correctly). HUD-module wiring (App.tsx → real panels) and mission objectives not started — see below |
+| 3 · Live data modules | 🟡 PR open | Provider layer *and* HUD-module wiring both built and verified live — every panel in `App.tsx` now reads a real channel. Mission objectives (to-do reskin) and the Radar module's real "contacts" concept are the only pieces left — see below |
 | 4 · Command & voice | ⬜ Not started | |
 | 5 · Boot sequence & sound | ⬜ Not started | |
 | 6 · Polish, FX, palettes | ⬜ Not started | |
@@ -225,29 +225,66 @@ raw values as text, in-browser. Confirmed:
   correctly with all 15 new channels registered.
 
 **Not started yet — the actual remaining Phase 3 work:**
-- **HUD-module wiring.** `App.tsx` still composes `hud/primitives/` directly with Phase 1's
-  hardcoded placeholder values (`ArcGauge value={72}`, etc. — see Phase 1's deviation note
-  below). None of these new channels are consumed by any component yet. The `hud/modules/`
-  decomposition ROADMAP's file tree calls for (`SystemVitals`, `Radar`, `Weather`,
-  `Objectives`, `ThreatLevel`) hasn't been built — this is genuinely the bulk of remaining
-  Phase 3 work, and it's composition/taste work (which panel shows which channel, how) more
-  than engineering, so it wasn't parallelized or rushed into this same pass.
-- **Mission objectives** (to-do reskin, localStorage-persisted) — not started. Not a telemetry
-  channel (ROADMAP lists it alongside the channel table as a separate feature), so it doesn't
-  block the provider work above; it's its own small self-contained piece.
-- Radar module's actual content (geo + weather + synthetic contacts) is still an open question
-  — see below, unchanged from before this phase.
+## Phase 3 — what was built (HUD-module wiring)
+
+`App.tsx` no longer has a single hardcoded placeholder value — every panel reads a real channel
+through a new `hud/modules/` component, matching ROADMAP's file tree:
+
+```
+src/hud/modules/
+  SystemVitals.tsx    # VITALS panel: MEM % (sys.heap normalized against a 300MB nominal ceiling,
+                       # purely for the gauge's 0-100 display range) + STABLE % (100 - jank*12)
+  PowerCore.tsx        # POWER CORE panel: BarMeter(power.level) + Readout(power.charging status)
+  Telemetry.tsx         # TELEMETRY panel: LAT/LON (geo.lat/lon, formatted with N/S, E/W)
+  Weather.tsx            # TELEMETRY panel: TEMP (weather.temp) — composed alongside Telemetry
+  Radar.tsx               # PROXIMITY panel: TickRing + CONTACTS (still synthetic "00" — see below)
+  ThreatLevel.tsx          # PROXIMITY panel: THREAT, color-coded NOMINAL/ELEVATED/CRITICAL
+  DataFeed.tsx              # DATA FEED ticker: static thematic lines + live GPU/net/weather/nav lines
+```
+
+UPTIME and LINK in the SYSTEM STATUS bar stayed inline in `App.tsx` (small enough not to need
+their own module file, matching how `LiveFpsReadout` was already inlined there) — UPTIME reads
+`core/clock.ts`'s shared clock directly (not a telemetry channel; this is the sanctioned central
+clock every other timing in the app already uses) via a selector that floors to whole seconds,
+so it only re-renders once a second instead of every frame. CALLSIGN stays a static identity
+label — there's no sensor for a callsign, so it was left as narrative flavor rather than forced
+into the channel abstraction.
+
+Added one small primitive change: `Readout` gained an optional `valueClassName` prop (defaults
+to the existing `text-hud-text`) so `ThreatLevel` can color-code by threat level. Wrapping
+`Readout` in a colored parent `div` does **not** work — the value `span` hardcodes its own text
+color class, which wins over an ancestor's color regardless of DOM nesting (CSS specificity, not
+inheritance) — caught this before shipping it, not after.
+
+**Verified live in Chrome**, not just typechecked: every panel shows a real value simultaneously
+(GPU string, core count, real/changing heap and network figures, UPTIME ticking, FPS climbing as
+the page settles); `THREAT` correctly renders NOMINAL in cyan and — temporarily forcing the
+threat thresholds, screenshotting, then reverting — CRITICAL in red (all three color classes are
+static literal strings in a `Record`, so Tailwind's build-time scan picks up all of them
+regardless of which renders at runtime; this is the pattern to copy for any future
+conditionally-styled channel, not a dynamically-constructed class string).
+
+**Still open:**
+- **Mission objectives** (to-do reskin, localStorage-persisted) — not started. ROADMAP lists it
+  alongside the channel table as a separate feature, not a telemetry channel, so it doesn't
+  block anything above. No existing panel slot fits it (a scrolling `Ticker` is a bad format for
+  an actionable checklist users need to read and act on) — it likely needs either a new panel or
+  a meaningful change to the current 2-panel-per-side layout, which is exactly the kind of
+  layout decision Phase 1 found needs visual iteration (screenshot, judge, adjust), not a
+  same-pass addition alongside a bunch of other changes. Deliberately deferred rather than
+  rushed.
+- **Radar module's real content.** `CONTACTS` is still a static "00" — not a fake placeholder
+  (a real radar legitimately shows zero contacts when there's nothing nearby), but ROADMAP's
+  "geo + weather + synthetic contacts" plan for what this panel actually *plots* hasn't been
+  designed or built. Unchanged open question from before this phase — see below.
 
 ## Next session should start with
 
-Phase 3's HUD-module wiring — the provider layer is done and verified, but nothing in the UI
-reads any of these 15 new channels yet. Decompose `App.tsx` into `hud/modules/` per ROADMAP's
-file tree, replacing Phase 1's hardcoded placeholder values with real `useTelemetry()` calls.
-This is the "done looks like" gate for Phase 3 (every panel live, nothing renders `undefined`,
-force-disabling any provider degrades cleanly) — the provider half of that gate is already
-verified; the module-wiring half still needs the same live-in-browser scrutiny once it exists.
-Mission objectives (to-do reskin, localStorage) can be built alongside or after — it doesn't
-depend on the module decomposition.
+Mission objectives — the one remaining Phase 3 deliverable with real design weight. Needs a
+layout decision (new panel vs. reworking the existing 2-panel side stacks) made the same way
+Phase 1's layout was tuned: build, screenshot, judge, adjust — not guessed at in the abstract.
+Once that's in and verified live, Phase 3's ROADMAP "done looks like" gate is fully met and
+Phase 4 (Command & Voice) is next.
 
 ---
 
