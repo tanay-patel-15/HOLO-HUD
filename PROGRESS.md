@@ -4,8 +4,8 @@
 > This file is what makes a session boundary free. If a session dies, read this first,
 > then `ROADMAP.md`, then `CLAUDE.md`.
 
-**Current phase:** Phase 2 — WebGL Core & Scene (gate passed, reactor polished, PR open)
-**Last updated:** 2026-08-11
+**Current phase:** Phase 2 — WebGL Core & Scene — ✅ Done, merged to main
+**Last updated:** 2026-08-18
 
 ---
 
@@ -16,7 +16,7 @@
 | −1 · Durable docs | ✅ Done | `ROADMAP.md`, `PROGRESS.md`, `CLAUDE.md` written |
 | 0 · Skeleton & contracts | ✅ Done | Gate verified in-browser |
 | 1 · 2D HUD chrome | ✅ Done | Aesthetic gate passed, see below |
-| 2 · WebGL core & scene | 🟡 PR open | All 6 deliverables built, verified live, reactor polished (spoke ring, hot-vein shader detail), perf-traced — see below. PR #1, not yet merged |
+| 2 · WebGL core & scene | ✅ Done | All 6 deliverables built, verified live, reactor polished, perf-verified (300-frame sample, 0 frames over 16ms budget). PR #1 merged to `main` |
 | 3 · Live data modules | ⬜ Not started | Parallelize across 3 agents |
 | 4 · Command & voice | ⬜ Not started | |
 | 5 · Boot sequence & sound | ⬜ Not started | |
@@ -153,18 +153,23 @@ with camera drift ✅ — both confirmed live, not just by reading the code. `np
   brightest few percent as sharp "energy vein" highlights mixed toward `uColorBright`. Reads as
   churning cracks of light across the surface instead of one uniform glow — much closer to an
   actual reactor core than a lit sphere.
-- Ran a real Chrome DevTools performance trace via `chrome-devtools-mcp` (previously only had
-  the live FPS readout as a signal). LCP 517ms / TTFB 4ms / CLS 0 on load, no render-blocking
-  issues flagged — reasonable for a dev-mode Three.js bundle. This trace is Core-Web-Vitals
-  shaped (load metrics), not a sustained-animation frame-time profile, so it's a load-time
-  sanity check, not proof of steady-state 60fps — the live FPS readout (90–250 range across
-  every check this session and last) remains the actual signal for CLAUDE.md's frame-budget
-  rule. A dedicated steady-state Performance-panel recording (record while idle, inspect the
-  Frames track directly) is still the more rigorous version of this check, if it's ever needed.
+- Ran a Chrome DevTools performance trace via `chrome-devtools-mcp` on page load — LCP 517ms /
+  TTFB 4ms / CLS 0, no render-blocking issues, reasonable for a dev-mode Three.js bundle. That
+  trace is Core-Web-Vitals shaped (load metrics), not a sustained-animation frame-time profile,
+  so a follow-up session did the more direct check: sampled 300 consecutive
+  `requestAnimationFrame` deltas during steady-state animation (reactor + camera drift + all
+  postprocessing running) directly in the page. **Avg 8.32ms/frame (~120fps), p95 9.4ms, worst
+  frame 12.8ms, zero frames over the 16.67ms/60fps budget.** That's a literal, direct
+  confirmation of CLAUDE.md's "hold 60fps, frame time under 16ms" rule for this scene — not an
+  inference from the live FPS readout. `EffectComposer` (bloom + aberration + grain) is included
+  in that number, not measured separately.
 
 **Still open — deferred, not blockers:**
 - Palette work is still correctly deferred to Phase 6 per the locked decision below — only Stark
   Cyan has been visually tuned; bloom threshold will need re-tuning per-palette there.
+- The frame-time sample above is from this machine/environment only — CLAUDE.md's own
+  verification checklist calls out testing on a machine that isn't yours as a pre-deploy step,
+  particularly for integrated-GPU bloom behavior. Still applies whenever deploy gets close.
 
 **Hard rule note:** CLAUDE.md #1/#2 were the two hardest constraints to actually satisfy here —
 see the "single rAF loop" gotcha below. Every WebGL animation in this phase (`CameraRig`,
@@ -173,11 +178,12 @@ mutates Three objects directly; nothing GSAP-driven touches a Three.js object.
 
 ## Next session should start with
 
-Phase 2 polish, not Phase 3 — the gate passed but the "Still open" list above (spoke-ring
-visibility, a real DevTools Performance-panel trace, further bloom/color-balance eyeballing)
-is genuine unfinished work, not just nice-to-haves. Read the four Phase 2 gotchas below first;
-they'll save real time. Once that polish pass is done and you're satisfied watching it for
-10+ seconds, move to Phase 3 (parallelizable across 3 agents per ROADMAP's provider burst).
+Phase 3 — Live Data Modules. Phase 2's gate, polish pass, and perf verification are all done
+and merged. Read the four Phase 2 gotchas below first — they're general R3F/Canvas lessons
+that will keep applying to any future `scene/` work, not just Phase 2-specific. Per ROADMAP,
+Phase 3 is the strong case for parallelizing across 3 agents (independent provider files, one
+shared interface, mechanical pass/fail criteria) — see ROADMAP's "Execution Strategy" section
+for the exact agent/file split before starting.
 
 ---
 
