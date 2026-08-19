@@ -4,8 +4,8 @@
 > This file is what makes a session boundary free. If a session dies, read this first,
 > then `ROADMAP.md`, then `CLAUDE.md`.
 
-**Current phase:** Phase 2 — WebGL Core & Scene (gate passed, reactor polished, PR open)
-**Last updated:** 2026-08-11
+**Current phase:** Phase 3 — Live Data Modules (telemetry provider layer done, PR open; HUD-module wiring still ahead)
+**Last updated:** 2026-08-19
 
 ---
 
@@ -16,8 +16,8 @@
 | −1 · Durable docs | ✅ Done | `ROADMAP.md`, `PROGRESS.md`, `CLAUDE.md` written |
 | 0 · Skeleton & contracts | ✅ Done | Gate verified in-browser |
 | 1 · 2D HUD chrome | ✅ Done | Aesthetic gate passed, see below |
-| 2 · WebGL core & scene | 🟡 PR open | All 6 deliverables built, verified live, reactor polished (spoke ring, hot-vein shader detail), perf-traced — see below. PR #1, not yet merged |
-| 3 · Live data modules | ⬜ Not started | Parallelize across 3 agents |
+| 2 · WebGL core & scene | ✅ Done | Gate passed, reactor polished, perf-verified, merged to `main` (PR #1). A docs-only perf follow-up (PR #2) is still open pending your merge. |
+| 3 · Live data modules | 🟡 PR open | Every Phase 3 channel's provider pair built, wired, and verified live in-browser (real data, permission-denial degrades cleanly, force-disable falls back correctly). HUD-module wiring (App.tsx → real panels) and mission objectives not started — see below |
 | 4 · Command & voice | ⬜ Not started | |
 | 5 · Boot sequence & sound | ⬜ Not started | |
 | 6 · Polish, FX, palettes | ⬜ Not started | |
@@ -171,13 +171,83 @@ see the "single rAF loop" gotcha below. Every WebGL animation in this phase (`Ca
 `ArcReactor`, `GridFloor`, `LightShafts`) reads `clockStore.getState()` inside `useFrame` and
 mutates Three objects directly; nothing GSAP-driven touches a Three.js object.
 
+## Phase 3 — what was built (provider layer)
+
+The full channel table from ROADMAP's Phase 3 spec now has a real primary provider and a
+simulated fallback wired into `telemetry/registry.ts`. This was the parallelizable "strong
+case" burst ROADMAP calls out — dispatched to 3 agents against a contract locked up front:
+
+```
+src/telemetry/
+  types.ts              # ChannelMap extended to all 16 channels (was 1 — perf.fps — before this phase)
+  registry.ts            # every channel's {primary, fallback} pair, wired by hand after the burst landed
+  derived/
+    threat.ts             # 'threat.level' — composes perf.jank + power.level + hour-of-day, not a raw API
+  providers/
+    browser/
+      perf.ts               # perf.fps (existing) + perf.jank (new, same rolling-window-over-clockStore idea)
+      audio-fft.ts           # audio.fft — getUserMedia + AnalyserNode, 32 bins
+      battery.ts              # power.level, power.charging — event-driven (levelchange/chargingchange)
+      network.ts               # net.type, net.downlink — event-driven (connection 'change')
+      gpu.ts                    # sys.gpu — one-shot WEBGL_debug_renderer_info probe, cached
+      sysinfo.ts                 # sys.cores (one-shot), sys.heap (polled), sys.memory (one-shot)
+      geo.ts                      # geo.lat, geo.lon — watchPosition
+      weather.ts                   # weather.temp, weather.condition — Open-Meteo, shared poll loop
+    simulated/
+      perf.ts (+jank), audio.ts, battery.ts, network.ts, sysinfo.ts, geo.ts, weather.ts
+      # one "seeded noise generator" file per browser/ counterpart, same shape as Phase 0's
+      # simulated/perf.ts reference
+```
+
+**Agent split** (exact ROADMAP assignment): Agent A → audio + perf.jank. Agent B → battery,
+network, gpu, sysinfo (all real/browser only). Agent C → geo + weather (real/browser) *and*
+every simulated fallback for every channel, per ROADMAP's literal table. None of the three
+touched `types.ts` or `registry.ts` — those were locked/integrated by hand before and after the
+burst respectively, so there was no file overlap and no merge coordination needed between them.
+
+**Verified live, not just typechecked** — this is the part that actually matters and where a
+real bug turned up (see gotchas): mounted a temporary debug harness (`DebugTelemetry.tsx`,
+swapped in via `main.tsx`, deleted before committing — never shipped) rendering all 16 channels'
+raw values as text, in-browser. Confirmed:
+- Every channel shows a real value on this machine (real GPU string, real core count, real
+  device memory, real — and changing — network/heap/battery readings), nothing renders
+  `undefined`.
+- `geo.lat`/`geo.lon` initially rendered as `undefined` indefinitely — a real bug, not a
+  simulated-fallback smell — because `browser/geo.ts`'s `subscribe()` only emitted from inside
+  `watchPosition`'s async callback, with nothing synchronous first. In an environment where the
+  permission prompt never resolves (this automated browser, but also just a slow-to-answer real
+  user), the channel sat at `undefined` forever. Fixed by adding an immediate synchronous
+  `emit(fallbackBase)` before calling `watchPosition`, matching the pattern
+  `browser/audio-fft.ts` already used correctly for the same kind of permission-gated API.
+- Force-disabling a provider (temporarily hardcoded `browserMemoryProvider.isAvailable()` to
+  `false`, reloaded, reverted after) correctly fell through to the simulated value — confirms
+  the registry-level primary/fallback swap mechanism (unchanged since Phase 0) still works
+  correctly with all 15 new channels registered.
+
+**Not started yet — the actual remaining Phase 3 work:**
+- **HUD-module wiring.** `App.tsx` still composes `hud/primitives/` directly with Phase 1's
+  hardcoded placeholder values (`ArcGauge value={72}`, etc. — see Phase 1's deviation note
+  below). None of these new channels are consumed by any component yet. The `hud/modules/`
+  decomposition ROADMAP's file tree calls for (`SystemVitals`, `Radar`, `Weather`,
+  `Objectives`, `ThreatLevel`) hasn't been built — this is genuinely the bulk of remaining
+  Phase 3 work, and it's composition/taste work (which panel shows which channel, how) more
+  than engineering, so it wasn't parallelized or rushed into this same pass.
+- **Mission objectives** (to-do reskin, localStorage-persisted) — not started. Not a telemetry
+  channel (ROADMAP lists it alongside the channel table as a separate feature), so it doesn't
+  block the provider work above; it's its own small self-contained piece.
+- Radar module's actual content (geo + weather + synthetic contacts) is still an open question
+  — see below, unchanged from before this phase.
+
 ## Next session should start with
 
-Phase 2 polish, not Phase 3 — the gate passed but the "Still open" list above (spoke-ring
-visibility, a real DevTools Performance-panel trace, further bloom/color-balance eyeballing)
-is genuine unfinished work, not just nice-to-haves. Read the four Phase 2 gotchas below first;
-they'll save real time. Once that polish pass is done and you're satisfied watching it for
-10+ seconds, move to Phase 3 (parallelizable across 3 agents per ROADMAP's provider burst).
+Phase 3's HUD-module wiring — the provider layer is done and verified, but nothing in the UI
+reads any of these 15 new channels yet. Decompose `App.tsx` into `hud/modules/` per ROADMAP's
+file tree, replacing Phase 1's hardcoded placeholder values with real `useTelemetry()` calls.
+This is the "done looks like" gate for Phase 3 (every panel live, nothing renders `undefined`,
+force-disabling any provider degrades cleanly) — the provider half of that gate is already
+verified; the module-wiring half still needs the same live-in-browser scrutiny once it exists.
+Mission objectives (to-do reskin, localStorage) can be built alongside or after — it doesn't
+depend on the module decomposition.
 
 ---
 
@@ -275,3 +345,19 @@ they'll save real time. Once that polish pass is done and you're satisfied watch
   navigate an existing one). Given how much shader/scene iteration Phase 2 involves, expect to
   need this recovery again — don't over-trust a single `npm run dev` process across a long
   `scene/`-heavy session.
+
+**Phase 3 — a provider gotcha worth remembering for any future permission-gated channel:**
+
+- **A `TelemetryProvider` backed by a permission-prompting API (geolocation, `getUserMedia`,
+  and anything similar in the future) must emit a fallback value *synchronously* on
+  `subscribe()`, before the permission decision resolves — not just from inside the eventual
+  success/error callback.** `browser/geo.ts` initially only emitted from inside
+  `watchPosition`'s callbacks; in an environment where the permission prompt never gets
+  answered (this session's automated browser had no human to click "Allow," but a slow real
+  user has the same effect for however many seconds they take to decide), the channel sat at
+  `undefined` indefinitely — a direct violation of "nothing renders `undefined`."
+  `browser/audio-fft.ts` got this right from the start (emits synthetic data immediately, swaps
+  to real data if/when `getUserMedia` resolves) — that's the pattern to copy. Caught by actually
+  mounting a debug harness and watching real output in the browser, not by reading the code or
+  trusting a subagent's self-reported typecheck/lint pass — both were clean and said nothing
+  about this, because the bug was a runtime timing issue, not a type error.

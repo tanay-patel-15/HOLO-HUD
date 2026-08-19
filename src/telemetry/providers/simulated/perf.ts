@@ -26,3 +26,22 @@ export const simulatedPerfProvider: TelemetryProvider<number> = {
     return () => clearInterval(id);
   },
 };
+
+const BASE_JANK = 0;
+const JANK_CHANCE = 0.15;
+const MAX_JANK_FRAMES = 3;
+
+export const simulatedJankProvider: TelemetryProvider<number> = {
+  isAvailable() {
+    return true;
+  },
+
+  subscribe(emit) {
+    emit(BASE_JANK);
+    const id = setInterval(() => {
+      const jank = Math.random() < JANK_CHANCE ? Math.ceil(Math.random() * MAX_JANK_FRAMES) : 0;
+      emit(jank);
+    }, EMIT_INTERVAL_MS);
+    return () => clearInterval(id);
+  },
+};
